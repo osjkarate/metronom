@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Metronom</title>
+    <style>
+        :root { --bg: #0d1117; --card: #161b22; --text: #c9d1d9; --accent: #1f6feb; --border: #30363d; }
+        body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 40px 10px 20px 10px; box-sizing: border-box; }
+        .main-title { color: #ffffff; font-size: 2.2rem; font-weight: 800; margin: 0 0 1.5rem 0; letter-spacing: -0.5px; }
+        .box { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; width: 100%; max-width: 380px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; box-sizing: border-box; }
+        .wrapper { display: inline-flex; justify-content: center; align-items: center; margin-bottom: 0.5rem; }
+        .indicator { width: 140px; height: 140px; border-radius: 50%; border: 4px solid var(--border); display: flex; justify-content: center; align-items: center; transition: all 0.05s ease; }
+        .indicator.flash { border-color: var(--accent); box-shadow: 0 0 20px rgba(31,111,235,0.6); background: rgba(31,111,235,0.15); }
+        .bpm-in { background: transparent; border: none; color: #fff; font-size: 3rem; font-weight: 800; width: 110px; text-align: center; outline: none; -webkit-appearance: none; }
+        .bpm-in::-webkit-outer-spin-button, .bpm-in::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .bpm-in[type=number] { -moz-appearance: textfield; }
+        .lbl { font-size: 0.85rem; color: #8b949e; letter-spacing: 2px; margin-bottom: 1.2rem; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-bottom: 1.2rem; }
+        .btn { background: #21262d; color: var(--text); border: 1px solid var(--border); padding: 0.9rem; font-size: 1rem; font-weight: 600; border-radius: 12px; cursor: pointer; user-select: none; touch-action: manipulation; }
+        .btn:active { background: #30363d; }
+        .btn-p { background: var(--accent); color: #fff; border: none; }
+        .btn-p:active { background: #388bfd; }
+        .btn-p.playing { background: #da3633; }
+        .title { font-size: 0.8rem; color: #8b949e; text-transform: uppercase; margin-bottom: 0.6rem; text-align: left; }
+        .presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; }
+        .btn-pre { padding: 0.7rem 0; font-size: 0.9rem; border-radius: 8px; }
+        .btn-pre.active { background: rgba(31,111,235,0.2); border-color: var(--accent); color: #388bfd; }
+    </style>
+</head>
+<body>
+    <h1 class="main-title">Metronom!</h1>
+    <div class="box">
+        <div class="wrapper"><div class="indicator" id="ind"><input type="number" id="bpm" class="bpm-in" value="120" min="40" max="250"></div></div>
+        <div class="lbl">BPM</div>
+        <div class="grid"><button class="btn btn-p" id="start">Starta</button><button class="btn" id="tap">Tap</button></div>
+        <div class="title">Snabbval</div>
+        <div class="presets" id="preBox"></div>
+    </div>
+    <script>
+        let bpm = 120, playing = false, audioCtx = null, nextTime = 0.0, timer = null, taps = [];
+        const ind = document.getElementById('ind'), inp = document.getElementById('bpm'), btnS = document.getElementById('start'), btnT = document.getElementById('tap'), box = document.getElementById('preBox');
+
+        for (let i = 50; i <= 200; i += 10) {
+            const b = document.createElement('button'); b.className = 'btn btn-pre'; b.textContent = i; b.onclick = () => upd(i); box.appendChild(b);
+        }
+        function init() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+        function play(t) {
+            const o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.connect(g); g.connect(audioCtx.destination);
+            o.frequency.setValueAtTime(1000, t); g.gain.setValueAtTime(1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+            o.start(t); o.stop(t + 0.04);
+            setTimeout(() => { ind.classList.add('flash'); setTimeout(() => ind.classList.remove('flash'), 50); }, Math.max(0, (t - audioCtx.currentTime) * 1000));
+        }
+        function sched() { while (nextTime < audioCtx.currentTime + 0.1) { play(nextTime); nextTime += 60.0 / bpm; } timer = setTimeout(sched, 25); }
+        function toggle() {
+            init();
+            if (playing) { playing = false; btnS.textContent = 'Starta'; btnS.classList.remove('playing'); clearTimeout(timer); }
+            else { playing = true; btnS.textContent = 'Stoppa'; btnS.classList.add('playing'); nextTime = audioCtx.currentTime + 0.02; sched(); }
+        }
+        function upd(v) {
+            bpm = Math.max(30, Math.min(300, parseInt(v) || 120)); inp.value = bpm;
+            document.querySelectorAll('.btn-pre').forEach(b => b.classList.toggle('active', parseInt(b.textContent) === bpm));
+        }
+        btnS.onclick = toggle; inp.oninput = (e) => upd(e.target.value);
+        btnT.onclick = () => {
+            const now = performance.now(); if (taps.length > 0 && now - taps[taps.length - 1] > 2000) taps = [];
+            taps.push(now); if (taps.length > 4) taps.shift();
+            if (taps.length > 1) {
+                let diff = 0; for (let i = 1; i < taps.length; i++) diff += (taps[i] - taps[i - 1]);
+                upd(Math.round(60000 / (diff / (taps.length - 1))));
+            }
+        };
+        upd(bpm);
+    </script>
+</body>
+</html>
